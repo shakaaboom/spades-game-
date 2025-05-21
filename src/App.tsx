@@ -83,6 +83,7 @@ function App() {
     <ThemeProvider defaultTheme="dark" storageKey="spades-theme">
       <AuthProvider>
         <WebSocketProvider>
+          <UpdateOnlineStatus />
           <ScrollToTop />
         
           <Routes>

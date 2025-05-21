@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/use-auth";
 import CollapsibleChat from "@/components/chat/CollapsibleChat";
 import { Layout } from "@/components/layout/Layout";
 import { supabase } from "@/integrations/supabase/client";
+import useOnlinePlayers from "@/hooks/use-online-players";
 
 const Lobby = () => {
   const { socket } = useWebSocket();
@@ -39,9 +40,8 @@ const Lobby = () => {
     { mode: 'real', type: 'partnered', wagerAmount: 250, count: 0 }
   ]);
 
-  // Online players state
-  const [onlinePlayers, setOnlinePlayers] = useState<OnlinePlayer[]>([]);
-  const [totalOnlinePlayers, setTotalOnlinePlayers] = useState(0);
+  // Use the online players hook for consistent data
+  const { onlinePlayers, totalOnlinePlayers } = useOnlinePlayers();
 
   // Fetch game statistics
   const fetchGameStats = async () => {
@@ -79,131 +79,29 @@ const Lobby = () => {
     }
   };
 
-  // Fetch online players
-  const fetchOnlinePlayers = async () => {
-    try {
-      setIsLoading(true);
-      
-      // First, get active players from game_players table
-      const { data: activePlayers, error: activePlayersError } = await supabase
-        .from('game_players')
-        // .select('user_id, game_id')
-        .select('user_id, game_id, games(status)')
-        .in('games.status', ['waiting', 'in_progress'])
-        .limit(20);
-
-      if (activePlayersError) throw activePlayersError;
-      
-      // Fetch user profile data for active players
-      const activePlayersList: OnlinePlayer[] = [];
-      const processedUserIds = new Set<string>();
-      
-      if (activePlayers && activePlayers.length > 0) {
-        // Get unique user IDs
-        const userIds = activePlayers
-          .filter(player => player.user_id)
-          .map(player => player.user_id) as string[];
-          
-        if (userIds.length > 0) {
-          // Fetch profiles for these users
-          const { data: playerProfiles, error: profilesError } = await supabase
-            .from('profiles')
-            .select('id, username, avatar_url, rating')
-            .in('id', userIds);
-            
-          if (profilesError) throw profilesError;
-          
-          if (playerProfiles) {
-            playerProfiles.forEach(profile => {
-              if (!processedUserIds.has(profile.id)) {
-                processedUserIds.add(profile.id);
-                activePlayersList.push({
-                  id: profile.id,
-                  name: profile.username || 'Unknown Player',
-                  avatar: profile.avatar_url || '',
-                  rating: profile.rating || 1000,
-                  status: 'in-game'
-                });
-              }
-            });
-          }
-        }
-      }
-      
-      // Fetch recent profiles for "online" users
-      const { data: recentProfiles, error: recentProfilesError } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url, rating')
-        .order('updated_at', { ascending: false })
-        .limit(30);
-        
-      if (recentProfilesError) throw recentProfilesError;
-      
-      // Add other recent profiles as "online" users
-      if (recentProfiles) {
-        recentProfiles.forEach(profile => {
-          if (!processedUserIds.has(profile.id)) {
-            processedUserIds.add(profile.id);
-            activePlayersList.push({
-              id: profile.id,
-              name: profile.username || 'Unknown Player',
-              avatar: profile.avatar_url || '',
-              rating: profile.rating || 1000,
-              status: 'online'
-            });
-          }
-        });
-      }
-      
-      // Add current user to online players list if authenticated
-      if (user && profile && !processedUserIds.has(user.id)) {
-        activePlayersList.unshift({
-          id: user.id,
-          name: profile.username || user.email?.split('@')[0] || 'Anonymous',
-          avatar: profile.avatar_url || '',
-          rating: profile.rating || 1000,
-          status: "online"
-        });
-      }
-      
-      setOnlinePlayers(activePlayersList);
-      setTotalOnlinePlayers(activePlayersList.length);
-      setIsLoading(false);
-    } catch (error) {
-      console.error("Error fetching online players:", error);
-      setIsLoading(false);
-    }
-  };
-
   // Initial data loading
   useEffect(() => {
     fetchGameStats();
-    fetchOnlinePlayers();
+    // No need to fetch online players here, handled by hook
     
     // Refresh data periodically
     const refreshInterval = setInterval(() => {
       fetchGameStats();
-      fetchOnlinePlayers();
     }, 60000); // Every minute
     
     return () => clearInterval(refreshInterval);
   }, [user, profile]);
-// Handle contacting admin
-const handleContactAdmin = () => {
-  setShowAdminContact(true);
-};
+
+  // Handle contacting admin
+  const handleContactAdmin = () => {
+    setShowAdminContact(true);
+  };
+
   return (
     <Layout onContactAdmin={handleContactAdmin}>
       <div className="py-6">
         <div className="container">
-          <LobbyHeader 
-            onlineCount={totalOnlinePlayers}
-            onRefresh={() => {
-              setIsLoading(true);
-              Promise.all([fetchGameStats(), fetchOnlinePlayers()]);
-            }}
-            isLoading={isLoading}
-          />
+          <LobbyHeader />
           
           <div className="mb-4">
             <LivePlayerCount />
@@ -218,7 +116,7 @@ const handleContactAdmin = () => {
           </div>
         </div>
         <CollapsibleChat adminContact={showAdminContact} />
-        </div>
+      </div>
     </Layout>
   );
 };
